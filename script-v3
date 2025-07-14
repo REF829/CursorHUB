@@ -1,0 +1,261 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
+local TextChatService = game:GetService("TextChatService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local flying = false
+local noclipEnabled = false
+local espEnabled = false
+local bodyVelocity
+
+local flySpeed = 50
+
+local screenGui, frame
+local flyButton, noclipButton, espButton
+
+local function createButton(text, pos)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 25)
+    btn.Position = pos
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    btn.BorderSizePixel = 0
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 18
+    btn.Text = text
+    btn.AutoButtonColor = true
+    btn.Parent = frame
+    return btn
+end
+
+local function enableESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            if not plr.Character:FindFirstChild("Highlight") then
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "Highlight"
+                highlight.Adornee = plr.Character
+                highlight.FillColor = Color3.fromRGB(255,0,0)
+                highlight.OutlineColor = Color3.fromRGB(0,0,0)
+                highlight.Parent = plr.Character
+            end
+        end
+    end
+    espEnabled = true
+end
+
+local function disableESP()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character then
+            local highlight = plr.Character:FindFirstChild("Highlight")
+            if highlight then
+                highlight:Destroy()
+            end
+        end
+    end
+    espEnabled = false
+end
+
+local function toggleESP()
+    if espEnabled then
+        disableESP()
+        espButton.Text = "Toggle ESP"
+    else
+        enableESP()
+        espButton.Text = "Disable ESP"
+    end
+end
+
+local function setNoClip(enabled)
+    local character = player.Character
+    if not character then return end
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            if enabled then
+                part.CanCollide = false
+            else
+                -- Only enable collision on torso parts, disable on others
+                if part.Name == "HumanoidRootPart" or part.Name == "Torso" or part.Name == "UpperTorso" or part.Name == "LowerTorso" then
+                    part.CanCollide = true
+                else
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+    noclipEnabled = enabled
+end
+
+local function toggleNoClip()
+    setNoClip(not noclipEnabled)
+    if noclipEnabled then
+        noclipButton.Text = "Disable NoClip"
+    else
+        noclipButton.Text = "Toggle NoClip"
+    end
+end
+
+local function isTyping()
+    -- Returns true if player is typing in any TextBox or chatting
+    if UserInputService:GetFocusedTextBox() then
+        return true
+    end
+    -- Also check Roblox TextChatService if applicable
+    if TextChatService and TextChatService.ActiveChannel and TextChatService:IsFocused() then
+        return true
+    end
+    return false
+end
+
+local function startFly()
+    local character = player.Character
+    if not character then return end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoidRootPart or not humanoid then return end
+
+    flying = true
+    humanoid.PlatformStand = true
+
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(1e5,1e5,1e5)
+    bodyVelocity.Velocity = Vector3.new(0,0,0)
+    bodyVelocity.Parent = humanoidRootPart
+
+    RunService:BindToRenderStep("Fly", Enum.RenderPriority.Character.Value, function()
+        if not flying then return end
+
+        if isTyping() then
+            -- Don't move when typing
+            bodyVelocity.Velocity = Vector3.new(0,0,0)
+            return
+        end
+
+        local camCFrame = workspace.CurrentCamera.CFrame
+        local moveDir = Vector3.new(0,0,0)
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDir = moveDir + camCFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDir = moveDir - camCFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDir = moveDir - camCFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDir = moveDir + camCFrame.RightVector
+        end
+
+        if moveDir.Magnitude > 0 then
+            bodyVelocity.Velocity = moveDir.Unit * flySpeed
+        else
+            bodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+    end)
+end
+
+local function stopFly()
+    flying = false
+    local character = player.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.PlatformStand = false
+    end
+    if bodyVelocity then
+        bodyVelocity:Destroy()
+        bodyVelocity = nil
+    end
+    RunService:UnbindFromRenderStep("Fly")
+end
+
+local function toggleFly()
+    if flying then
+        stopFly()
+        flyButton.Text = "Toggle Fly"
+    else
+        startFly()
+        flyButton.Text = "Disable Fly"
+    end
+end
+
+local function setupGui()
+    if playerGui:FindFirstChild("CursorHUB") then
+        playerGui.CursorHUB:Destroy()
+    end
+
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CursorHUB"
+    screenGui.Parent = playerGui
+    screenGui.ResetOnSpawn = false
+
+    frame = Instance.new("Frame")
+    frame.Name = "MainFrame"
+    frame.Size = UDim2.new(0, 220, 0, 140)
+    frame.Position = UDim2.new(0.5, -110, 0.5, -60)
+    frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    frame.BorderSizePixel = 0
+    frame.Parent = screenGui
+    frame.Active = true
+    frame.Draggable = true
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundTransparency = 1
+    title.Text = "CursorHUB"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 22
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Parent = frame
+
+    flyButton = createButton("Toggle Fly", UDim2.new(0, 10, 0, 40))
+    noclipButton = createButton("Toggle NoClip", UDim2.new(0, 10, 0, 70))
+    espButton = createButton("Toggle ESP", UDim2.new(0, 10, 0, 100))
+
+    flyButton.MouseButton1Click:Connect(toggleFly)
+    noclipButton.MouseButton1Click:Connect(toggleNoClip)
+    espButton.MouseButton1Click:Connect(toggleESP)
+end
+
+local function onCharacterAdded(character)
+    if flying then
+        startFly()
+    end
+    if noclipEnabled then
+        setNoClip(true)
+    end
+    if espEnabled then
+        enableESP()
+    end
+end
+
+setupGui()
+
+player.CharacterAdded:Connect(onCharacterAdded)
+
+local sound = Instance.new("Sound")
+sound.SoundId = "rbxassetid://138081500"
+sound.Volume = 1
+sound.Parent = playerGui
+sound:Play()
+
+print([[   /\   ]])
+print([[  /  \  ]])
+print([[ /____\ ]])
+print([[/      \]])
+print([[          ]])
+print([[|\  |]])
+print([[| \ |]])
+print([[|  \|]])
+print([[          ]])
+print([[   _]])
+print([[  /]])
+print([[  |]])
+print([[  \]])
+print([[  |]])
+print([[ _/]])
