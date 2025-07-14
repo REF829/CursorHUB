@@ -1,0 +1,143 @@
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local noclipEnabled = false
+local flyEnabled = false
+
+local flySpeed = 50
+
+local velocity = Vector3.new(0,0,0)
+
+-- Utility function to check if typing (any TextBox or TextService focused)
+local function isTyping()
+    if UserInputService:GetFocusedTextBox() then
+        return true
+    end
+    return false
+end
+
+local function setNoclip(enabled)
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = not enabled
+            else
+                -- Always keep torso collision on noclip off
+                part.CanCollide = true
+            end
+        end
+    end
+    noclipEnabled = enabled
+end
+
+local flyDirection = Vector3.new(0,0,0)
+
+local function updateFlyDirection()
+    if isTyping() or not flyEnabled then
+        flyDirection = Vector3.new(0,0,0)
+        return
+    end
+    
+    local forward = 0
+    local backward = 0
+    local left = 0
+    local right = 0
+    local up = 0
+    local down = 0
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then forward = 1 end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then backward = 1 end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then left = 1 end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then right = 1 end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then up = 1 end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then down = 1 end
+
+    local camCFrame = workspace.CurrentCamera.CFrame
+    local moveVector = Vector3.new(right - left, up - down, backward - forward)
+
+    local relativeMovement = (camCFrame.RightVector * (right - left)) + 
+                             (camCFrame.UpVector * (up - down)) + 
+                             (camCFrame.LookVector * (forward - backward))
+
+    flyDirection = Vector3.new(relativeMovement.X, relativeMovement.Y, relativeMovement.Z).Unit
+    if moveVector.Magnitude == 0 then
+        flyDirection = Vector3.new(0,0,0)
+    end
+end
+
+-- Fly velocity controller
+local bodyVelocity
+
+local function startFly()
+    if bodyVelocity then return end
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    bodyVelocity.Velocity = Vector3.new(0,0,0)
+    bodyVelocity.Parent = humanoidRootPart
+end
+
+local function stopFly()
+    if bodyVelocity then
+        bodyVelocity:Destroy()
+        bodyVelocity = nil
+    end
+end
+
+-- Update loop for noclip and fly
+RunService.Heartbeat:Connect(function()
+    if noclipEnabled then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    if flyEnabled and bodyVelocity then
+        updateFlyDirection()
+        if flyDirection.Magnitude > 0 then
+            bodyVelocity.Velocity = flyDirection * flySpeed
+        else
+            bodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.N then
+        setNoclip(not noclipEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F then
+        flyEnabled = not flyEnabled
+        if flyEnabled then
+            startFly()
+            humanoid.PlatformStand = true
+        else
+            stopFly()
+            humanoid.PlatformStand = false
+        end
+    end
+end)
+
+-- Update character reference on respawn
+player.CharacterAdded:Connect(function(char)
+    character = char
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:WaitForChild("Humanoid")
+    if flyEnabled then
+        startFly()
+        humanoid.PlatformStand = true
+    else
+        stopFly()
+        humanoid.PlatformStand = false
+    end
+    if noclipEnabled then
+        setNoclip(true)
+    end
+end)
